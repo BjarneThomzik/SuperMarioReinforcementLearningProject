@@ -20,6 +20,7 @@ class NeuroevolutionAgent:
         self.neuroevolution_net: NeuroevolutionNet = neuroevolution_net
         self.fitness: float = 0.0
         self.max_steps: int = max_steps
+        self._initial_lives: int = 1
 
     def act(self, processed_obs: Tensor) -> int:
         """
@@ -51,14 +52,21 @@ class NeuroevolutionAgent:
         observation = env.reset()
         total_reward = 0
 
-        # Agent goes frame by frame through the game until he dies
+        # Get initial lives
+        _, _, _, info = env.step(0)
+        self._initial_lives = info.get("life", 3)
+
+        # Agent goes frame by frame through the game until he dies or the episode has ended
         for step in range(self.max_steps):
             processed_observation = self._preprocess(observation)
             action = self.act(processed_observation.unsqueeze(0))
             observation, reward, done, info = env.step(action)
             total_reward += reward
-            if done:
+
+            # Break if the agent has died (once) or episode has ended
+            if done or info.get("life", 3) < self._initial_lives:
                 break
+
         self.fitness = total_reward
         return total_reward
 
