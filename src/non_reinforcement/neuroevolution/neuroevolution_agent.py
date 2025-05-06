@@ -1,0 +1,73 @@
+import cv2
+import torch
+from src.non_reinforcement.neuroevolution.neuroevolution_net import NeuroevolutionNet
+
+
+class NeuroevolutionAgent:
+    """Agent using a neuroevolutionary network to select actions and evaluate fitness."""
+
+    def __init__(self, neuroevolution_net: NeuroevolutionNet, max_steps=1000):
+        """
+        Initialize the agent.
+
+        Args:
+            neuroevolution_net (NeuroevolutionNet): The policy network used for action selection.
+            max_steps (int): Maximum steps per evaluation episode.
+        """
+        self.neuroevolution_net: NeuroevolutionNet = neuroevolution_net
+        self.fitness = 0
+        self.max_steps = max_steps
+
+    def act(self, processed_obs):
+        """
+        Select an action based on the processed observation.
+
+        Args:
+            processed_obs (torch.Tensor): Input tensor of shape (1, 1, H, W).
+
+        Returns:
+            int: Index of the selected action.
+        """
+        with torch.no_grad():
+            logits = self.neuroevolution_net(processed_obs)
+            action = torch.argmax(logits, dim=1).item()
+        return action
+
+    def evaluate(self, env):
+        """
+        Evaluate the agent in a single episode and return the total reward.
+
+        Args:
+            env: Super mario Gym  environment with reset() and step() methods.
+
+        Returns:
+            float: Total accumulated reward (fitness score).
+        """
+        observation = env.reset()
+        total_reward = 0
+        for step in range(self.max_steps):
+            processed_observation = self._preprocess(observation)
+            action = self.act(processed_observation.unsqueeze(0))
+            observation, reward, done, info = env.step(action)
+            total_reward += reward
+            if done:
+                break
+        self.fitness = total_reward
+        return total_reward
+
+    def _preprocess(self, obs, size=84):
+        """
+        Convert an RGB image to a normalized grayscale tensor.
+
+        Args:
+            obs (np.ndarray): RGB input image.
+            size (int): Target size for resizing (square).
+
+        Returns:
+            torch.Tensor: Preprocessed grayscale tensor with shape (1, H, W).
+        """
+        obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
+        obs = cv2.resize(obs, (size, size))
+        obs = obs / 255.0
+        tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+        return tensor
