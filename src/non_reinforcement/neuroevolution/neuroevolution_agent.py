@@ -1,12 +1,15 @@
 import cv2
+import numpy as np
 import torch
+from torch import Tensor
+from gym import Env
 from src.non_reinforcement.neuroevolution.neuroevolution_net import NeuroevolutionNet
 
 
 class NeuroevolutionAgent:
     """Agent using a neuroevolutionary network to select actions and evaluate fitness."""
 
-    def __init__(self, neuroevolution_net: NeuroevolutionNet, max_steps=1000):
+    def __init__(self, neuroevolution_net: NeuroevolutionNet, max_steps: int = 1000) -> None:
         """
         Initialize the agent.
 
@@ -15,10 +18,10 @@ class NeuroevolutionAgent:
             max_steps (int): Maximum steps per evaluation episode.
         """
         self.neuroevolution_net: NeuroevolutionNet = neuroevolution_net
-        self.fitness = 0
-        self.max_steps = max_steps
+        self.fitness: float = 0.0
+        self.max_steps: int = max_steps
 
-    def act(self, processed_obs):
+    def act(self, processed_obs: Tensor) -> int:
         """
         Select an action based on the processed observation.
 
@@ -29,22 +32,26 @@ class NeuroevolutionAgent:
             int: Index of the selected action.
         """
         with torch.no_grad():
+            # Get action from neural network
             logits = self.neuroevolution_net(processed_obs)
             action = torch.argmax(logits, dim=1).item()
         return action
 
-    def evaluate(self, env):
+    def evaluate(self, env: Env) -> float:
         """
         Evaluate the agent in a single episode and return the total reward.
 
         Args:
-            env: Super mario Gym  environment with reset() and step() methods.
+            env (gym.Env): Super Mario Gym environment.
 
         Returns:
             float: Total accumulated reward (fitness score).
         """
+        # Get the first frame of the game and set the reward to 0
         observation = env.reset()
         total_reward = 0
+
+        # Agent goes frame by frame through the game until he dies
         for step in range(self.max_steps):
             processed_observation = self._preprocess(observation)
             action = self.act(processed_observation.unsqueeze(0))
@@ -55,7 +62,7 @@ class NeuroevolutionAgent:
         self.fitness = total_reward
         return total_reward
 
-    def _preprocess(self, obs, size=84):
+    def _preprocess(self, obs: np.ndarray, size: int = 84) -> Tensor:
         """
         Convert an RGB image to a normalized grayscale tensor.
 
