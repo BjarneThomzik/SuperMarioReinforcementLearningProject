@@ -33,6 +33,10 @@ class NeuroevolutionAgent:
             int: Index of the selected action.
         """
         with torch.no_grad():
+            # Move input to same device as the model
+            device = next(self.neuroevolution_net.parameters()).device
+            processed_obs = processed_obs.to(device)
+
             # Get action from neural network
             logits = self.neuroevolution_net(processed_obs)
             action = torch.argmax(logits, dim=1).item()
