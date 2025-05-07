@@ -1,8 +1,10 @@
 import os
 import torch
 import gym_super_mario_bros
+from IPython.core.display_functions import clear_output
 from gym import Env
 from gym.wrappers import RecordVideo
+from matplotlib import pyplot as plt
 from nes_py.wrappers import JoypadSpace
 
 from src.non_reinforcement.neuroevolution.neuroevolution_agent import NeuroevolutionAgent
@@ -40,6 +42,7 @@ class NeuroevolutionTrainer:
 
         self.best_agent = None
         self.best_fitness = float('-inf')
+        self.metrics_log = []
 
         os.makedirs(self.video_dir, exist_ok=True)
 
@@ -77,26 +80,39 @@ class NeuroevolutionTrainer:
         """
         Run the neuroevolution training loop across multiple generations.
         In each generation, agents are cloned, mutated, evaluated, and the best agent is tracked.
+        After each generation, training metrics are updated and plotted live.
         """
         for generation in range(self.generations):
-            print(f"\nGeneration {generation + 1}/{self.generations}")
-
             agents = []
             for _ in range(self.population_size):
                 model = self.clone_and_mutate(self.base_model)
                 agent = NeuroevolutionAgent(model)
                 agents.append(agent)
 
+            fitnesses = []
             for index, agent in enumerate(agents):
                 env = self.make_env(record=False)
                 fitness = agent.evaluate(env)
                 env.close()
-                print(f"Agent {index} Fitness: {fitness:.2f}")
+                fitnesses.append(fitness)
+
                 if fitness > self.best_fitness:
                     self.best_fitness = fitness
                     self.best_agent = agent
                     self.base_model = agent.neuroevolution_net
-                    print(f"New best agent found! Fitness: {fitness:.2f}")
+
+            # Save metrics of the current generation
+            avg_fitness = sum(fitnesses) / len(fitnesses)
+            min_fitness = min(fitnesses)
+            self.metrics_log.append({
+                "generation": generation + 1,
+                "best": self.best_fitness,
+                "avg": avg_fitness,
+                "min": min_fitness
+            })
+
+            # Plot metrics of the current generation
+            self.plot_metrics()
 
     def record_best_agent(self):
         """
@@ -114,3 +130,38 @@ class NeuroevolutionTrainer:
 
         print(f"\nFinal fitness: {final_fitness:.2f}")
         print(f"Video saved to: {self.video_dir}")
+
+    def plot_metrics(self):
+        """
+        Plot best, average, and minimum fitness across all completed generations.
+        Clears previous output to keep the notebook clean (for Jupyter).
+        """
+        if not self.metrics_log:
+            print("No metrics to plot.")
+            return
+
+        generations = [m["generation"] for m in self.metrics_log]
+        best = [m["best"] for m in self.metrics_log]
+        avg = [m["avg"] for m in self.metrics_log]
+        min_ = [m["min"] for m in self.metrics_log]
+
+        # Clear output
+        clear_output()
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(generations, best, label="Best Fitness", color="green", linewidth=1)
+        plt.plot(generations, avg, label="Average Fitness", color="blue", linewidth=5)
+        plt.plot(generations, min_, label="Min Fitness", color="red", linewidth=1)
+
+        plt.xlabel("Generation")
+        plt.ylabel("Fitness")
+        plt.title("Neuroevolution Training Progress")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+        # Print current metrics
+        last = self.metrics_log[-1]
+        print(f"Generation: {last['generation']} / {self.generations}")
+        print(f"\nBest: {last['best']:.2f} | Average: {last['avg']:.2f} | Min: {last['min']:.2f}")
