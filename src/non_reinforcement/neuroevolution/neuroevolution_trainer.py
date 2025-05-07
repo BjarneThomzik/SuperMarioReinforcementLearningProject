@@ -75,7 +75,9 @@ class NeuroevolutionTrainer:
         Returns:
             NeuroevolutionNet: A new, mutated model on the same device.
         """
-        new_net = NeuroevolutionNet(input_channels=1, num_actions=len(self.action_set)).to(self.device)
+        new_net = NeuroevolutionNet(input_channels=1, num_actions=len(self.action_set),
+                                    cnn_config=self.base_model.cnn_config, mlp_config=self.base_model.mlp_config).to(
+            self.device)
         new_net.load_state_dict(net.state_dict())
         new_net.mutate(self.mutation_rate, self.mutation_strength)
         return new_net

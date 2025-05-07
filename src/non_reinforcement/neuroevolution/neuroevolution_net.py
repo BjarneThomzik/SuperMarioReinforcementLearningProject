@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from typing import List, Dict
 
 
 class NeuroevolutionNet(nn.Module):
@@ -11,33 +12,43 @@ class NeuroevolutionNet(nn.Module):
     It supports mutation for evolutionary algorithms.
 
     Args:
-        input_channels (int): Number of input channels (usually 1 for grayscale).
-        num_actions (int): Number of discrete actions
-
-    Attributes:
-        cnn (nn.Sequential): Convolutional feature extractor.
-        mlp (nn.Sequential): Fully connected decision layers.
+        input_channels (int): Number of input channels (e.g. 1 for grayscale).
+        num_actions (int): Number of possible output actions (logits).
+        cnn_config (List[Dict]): List of dicts for each Conv2D layer (keys: out_channels, kernel_size, stride).
+        mlp_config (List[int]): List of hidden layer sizes for the MLP.
     """
 
-    def __init__(self, input_channels: int, num_actions: int):
+    def __init__(self, input_channels: int, num_actions: int, cnn_config: List[Dict], mlp_config: List[int]):
         super().__init__()
         self.num_actions = num_actions
+        self.cnn_config = cnn_config
+        self.mlp_config = mlp_config
 
-        # Create CNN and MLP
-        self.cnn = nn.Sequential(
-            nn.Conv2d(input_channels, 16, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Flatten()
-        )
-        self.mlp = nn.Sequential(
-            nn.Linear(32 * 9 * 9, 256),
-            nn.ReLU(),
-            nn.Linear(256, self.num_actions)
-        )
+        # Construct CNN from cnn_config
+        cnn_layers = []
+        in_channels = input_channels
+        for layer_cfg in self.cnn_config:
+            cnn_layers.append(nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=layer_cfg["out_channels"],
+                kernel_size=layer_cfg["kernel_size"],
+                stride=layer_cfg["stride"]
+            ))
+            cnn_layers.append(nn.ReLU())
+            in_channels = layer_cfg["out_channels"]
+        cnn_layers.append(nn.Flatten())
+        self.cnn = nn.Sequential(*cnn_layers)
 
-        # Initialize weights with Xavier initialization
+        # Construct MLP from mlp_config
+        mlp_layers = []
+        for in_f, out_f in zip(self.mlp_config[:-1], self.mlp_config[1:]):
+            mlp_layers.append(nn.Linear(in_f, out_f))
+            mlp_layers.append(nn.ReLU())
+        # Remove the last ReLU layer so that we have a logit output layer
+        mlp_layers.pop()
+        self.mlp = nn.Sequential(*mlp_layers)
+
+        # Initialize weights
         self._init_weights()
 
     def _init_weights(self):
