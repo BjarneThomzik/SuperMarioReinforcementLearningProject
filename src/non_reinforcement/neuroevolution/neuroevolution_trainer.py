@@ -108,11 +108,12 @@ class NeuroevolutionTrainer:
                     self.base_model = agent.neuroevolution_net
 
             # Save metrics of the current generation
+            gen_best = max(fitnesses)
             avg_fitness = sum(fitnesses) / len(fitnesses)
             min_fitness = min(fitnesses)
             self.metrics_log.append({
                 "generation": generation + 1,
-                "best": self.best_fitness,
+                "best": gen_best,
                 "avg": avg_fitness,
                 "min": min_fitness
             })
@@ -167,7 +168,7 @@ class NeuroevolutionTrainer:
         plt.tight_layout()
         plt.show()
 
-        # Print current metrics
+        # Print global metrics
         last = self.metrics_log[-1]
         print(f"Generation: {last['generation']} / {self.generations}")
-        print(f"\nBest: {last['best']:.2f} | Average: {last['avg']:.2f} | Min: {last['min']:.2f}")
+        print(f"\nAlltime best: {self.best_fitness:.2f}")
