@@ -18,7 +18,8 @@ class NeuroevolutionTrainer:
     """
 
     def __init__(self, base_model: NeuroevolutionNet, env_name: str, action_set: list, device: torch.device,
-                 video_dir: str, generations: int = 10, population_size: int = 10
+                 video_dir: str, generations: int = 10, population_size: int = 10, max_steps_per_episode: int = 1000,
+                 mutation_rate: float = 0.05, mutation_strength: float = 0.1
                  ):
         """
         Initialize the neuroevolution trainer.
@@ -39,6 +40,9 @@ class NeuroevolutionTrainer:
         self.video_dir = video_dir
         self.generations = generations
         self.population_size = population_size
+        self.max_steps_per_episode = max_steps_per_episode
+        self.mutation_rate = mutation_rate
+        self.mutation_strength = mutation_strength
 
         self.best_agent = None
         self.best_fitness = float('-inf')
@@ -73,7 +77,7 @@ class NeuroevolutionTrainer:
         """
         new_net = NeuroevolutionNet(input_channels=1, num_actions=len(self.action_set)).to(self.device)
         new_net.load_state_dict(net.state_dict())
-        new_net.mutate(mutation_rate=0.05, mutation_strength=0.1)
+        new_net.mutate(self.mutation_rate, self.mutation_strength)
         return new_net
 
     def run(self):
@@ -86,7 +90,7 @@ class NeuroevolutionTrainer:
             agents = []
             for _ in range(self.population_size):
                 model = self.clone_and_mutate(self.base_model)
-                agent = NeuroevolutionAgent(model)
+                agent = NeuroevolutionAgent(model, self.max_steps_per_episode)
                 agents.append(agent)
 
             fitnesses = []
