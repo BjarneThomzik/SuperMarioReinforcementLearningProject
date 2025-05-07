@@ -74,7 +74,8 @@ class NeuroevolutionAgent:
         self.fitness = total_reward
         return total_reward
 
-    def _preprocess(self, obs: np.ndarray, size: int = 84) -> Tensor:
+    @staticmethod
+    def _preprocess(obs: np.ndarray, size: int = 84) -> Tensor:
         """
         Convert an RGB image to a normalized grayscale tensor.
 
