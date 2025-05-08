@@ -18,9 +18,8 @@ class NeuroevolutionTrainer:
     """
 
     def __init__(self, base_model: NeuroevolutionNet, env_name: str, action_set: list, device: torch.device,
-                 video_dir: str, generations: int = 10, population_size: int = 10, max_steps_per_episode: int = 1000,
-                 mutation_rate: float = 0.05, mutation_strength: float = 0.1
-                 ):
+                 video_dir: str, generations: int, population_size: int, max_steps_per_episode: int,
+                 mutation_rate: float, mutation_strength: float):
         """
         Initialize the neuroevolution trainer.
 
