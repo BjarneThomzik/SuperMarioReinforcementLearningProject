@@ -23,7 +23,7 @@ class NeuroevolutionTrainer:
 
     def __init__(self, base_model: NeuroevolutionNet, env_name: str, action_set: list, device: torch.device,
                  video_dir: str, generations: int, population_size: int, max_steps_per_episode: int,
-                 mutation_rate: float, mutation_strength: float):
+                 mutation_rate: float, mutation_strength: float, wheel_selection_temperature: float):
         """
         Initialize the neuroevolution trainer.
 
@@ -46,6 +46,7 @@ class NeuroevolutionTrainer:
         self.max_steps_per_episode = max_steps_per_episode
         self.mutation_rate = mutation_rate
         self.mutation_strength = mutation_strength
+        self.wheel_selection_temperature = wheel_selection_temperature
 
         self.best_agent = None
         self.best_fitness = float('-inf')
@@ -85,7 +86,7 @@ class NeuroevolutionTrainer:
         new_net.mutate(self.mutation_rate, self.mutation_strength)
         return new_net
 
-    def _select_parent(self, agents, fitnesses, temperature: float):
+    def _select_parent(self, agents, fitnesses):
         """
         Selects a parent via softmax-weighted roulette selection.
         Fitness is normalized and passed through softmax with temperature to avoid domination of a single agent.
@@ -100,7 +101,7 @@ class NeuroevolutionTrainer:
             norm_fitnesses = (fitnesses - min_f) / (max_f - min_f)
 
         # Apply softmax with temperature
-        logits = norm_fitnesses / temperature
+        logits = norm_fitnesses / self.wheel_selection_temperature
         probabilities = scipy.special.softmax(logits)
 
         # Sample parent index based on probabilities
@@ -113,7 +114,7 @@ class NeuroevolutionTrainer:
         """
         new_agents = []
         for _ in range(self.population_size):
-            parent_net = self._select_parent(agents, fitnesses, temperature=0.3)
+            parent_net = self._select_parent(agents, fitnesses)
             child_net = copy.deepcopy(parent_net).to(self.device)
             child_net.mutate(self.mutation_rate, self.mutation_strength)
             new_agents.append(NeuroevolutionAgent(child_net, self.max_steps_per_episode))
