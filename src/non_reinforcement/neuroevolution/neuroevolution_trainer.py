@@ -23,7 +23,7 @@ class NeuroevolutionTrainer:
 
     def __init__(self, base_model: NeuroevolutionNet, env_name: str, action_set: list, device: torch.device,
                  video_dir: str, generations: int, population_size: int, max_steps_per_episode: int,
-                 mutation_rate: float, mutation_strength: float, wheel_selection_temperature: float):
+                 mutation_rate: float, mutation_strength: float, wheel_selection_temperature: float, elitism: int):
         """
         Initialize the neuroevolution trainer.
 
@@ -47,6 +47,7 @@ class NeuroevolutionTrainer:
         self.mutation_rate = mutation_rate
         self.mutation_strength = mutation_strength
         self.wheel_selection_temperature = wheel_selection_temperature
+        self.elitism = elitism
 
         self.best_agent = None
         self.best_fitness = float('-inf')
@@ -110,14 +111,26 @@ class NeuroevolutionTrainer:
 
     def _create_population(self, agents, fitnesses):
         """
-        Creates a new population via fitness-proportional selection and mutation.
+        Creates a new population via fitness-proportional selection and elitism.
+        Elitism: Keep the self.elitism number of the best agents without mutation.
         """
         new_agents = []
-        for _ in range(self.population_size):
+
+        # Copy the best agents of this generation (the elites)
+        if self.elitism:
+            elite_idx = np.argsort(fitnesses)[-self.elitism:]
+            for idx in elite_idx:
+                elite_net = copy.deepcopy(agents[idx].neuroevolution_net).to(self.device)
+                new_agents.append(
+                    NeuroevolutionAgent(elite_net, self.max_steps_per_episode)
+                )
+
+        # Select the rest of the agents with fitness proportionate selection and mutate them
+        while len(new_agents) < self.population_size:
             parent_net = self._select_parent(agents, fitnesses)
-            child_net = copy.deepcopy(parent_net).to(self.device)
-            child_net.mutate(self.mutation_rate, self.mutation_strength)
+            child_net = self.clone_and_mutate(parent_net)
             new_agents.append(NeuroevolutionAgent(child_net, self.max_steps_per_episode))
+
         return new_agents
 
     def run(self):
