@@ -1,4 +1,8 @@
+import copy
 import os
+
+import numpy as np
+import scipy
 import torch
 import gym_super_mario_bros
 from IPython.core.display_functions import clear_output
@@ -81,21 +85,55 @@ class NeuroevolutionTrainer:
         new_net.mutate(self.mutation_rate, self.mutation_strength)
         return new_net
 
+    def _select_parent(self, agents, fitnesses, temperature: float):
+        """
+        Selects a parent via softmax-weighted roulette selection.
+        Fitness is normalized and passed through softmax with temperature to avoid domination of a single agent.
+        """
+        fitnesses = np.array(fitnesses, dtype=np.float32)
+
+        # Normalize fitness values to [0, 1]
+        min_f, max_f = fitnesses.min(), fitnesses.max()
+        if max_f - min_f < 1e-6:
+            norm_fitnesses = np.ones_like(fitnesses)
+        else:
+            norm_fitnesses = (fitnesses - min_f) / (max_f - min_f)
+
+        # Apply softmax with temperature
+        logits = norm_fitnesses / temperature
+        probabilities = scipy.special.softmax(logits)
+
+        # Sample parent index based on probabilities
+        index = np.random.choice(len(agents), p=probabilities)
+        return agents[index].neuroevolution_net
+
+    def _create_population(self, agents, fitnesses):
+        """
+        Creates a new population via fitness-proportional selection and mutation.
+        """
+        new_agents = []
+        for _ in range(self.population_size):
+            parent_net = self._select_parent(agents, fitnesses, temperature=0.3)
+            child_net = copy.deepcopy(parent_net).to(self.device)
+            child_net.mutate(self.mutation_rate, self.mutation_strength)
+            new_agents.append(NeuroevolutionAgent(child_net, self.max_steps_per_episode))
+        return new_agents
+
     def run(self):
         """
         Run the neuroevolution training loop across multiple generations.
         In each generation, agents are cloned, mutated, evaluated, and the best agent is tracked.
         After each generation, training metrics are updated and plotted live.
         """
-        for generation in range(self.generations):
-            agents = []
-            for _ in range(self.population_size):
-                model = self.clone_and_mutate(self.base_model)
-                agent = NeuroevolutionAgent(model, self.max_steps_per_episode)
-                agents.append(agent)
+        # The first generation uses copies from the base model
+        agents = [
+            NeuroevolutionAgent(copy.deepcopy(self.base_model), self.max_steps_per_episode)
+            for _ in range(self.population_size)
+        ]
 
+        for generation in range(self.generations):
             fitnesses = []
-            for index, agent in enumerate(agents):
+            for agent in agents:
                 env = self.make_env(record=False)
                 fitness = agent.evaluate(env)
                 env.close()
@@ -104,21 +142,18 @@ class NeuroevolutionTrainer:
                 if fitness > self.best_fitness:
                     self.best_fitness = fitness
                     self.best_agent = agent
-                    self.base_model = agent.neuroevolution_net
 
             # Save metrics of the current generation
-            gen_best = max(fitnesses)
-            avg_fitness = sum(fitnesses) / len(fitnesses)
-            min_fitness = min(fitnesses)
             self.metrics_log.append({
                 "generation": generation + 1,
-                "best": gen_best,
-                "avg": avg_fitness,
-                "min": min_fitness
+                "best": max(fitnesses),
+                "avg": float(np.mean(fitnesses)),
+                "min": min(fitnesses)
             })
-
-            # Plot metrics of the current generation
             self.plot_metrics()
+
+            # Create new population with fitness proportional selection
+            agents = self._create_population(agents, fitnesses)
 
     def record_best_agent(self):
         """
