@@ -53,6 +53,7 @@ class NeuroevolutionTrainer:
         self.best_agent = None
         self.best_fitness = float('-inf')
         self.metrics_log = []
+        self.output_dir = None
 
         os.makedirs(self.video_dir, exist_ok=True)
 
@@ -220,6 +221,8 @@ class NeuroevolutionTrainer:
         print(f"\nFinal fitness: {final_fitness:.2f}")
         print(f"Video saved to: {final_path}")
 
+        self.output_dir = run_dir
+
     def plot_metrics(self):
         """
         Plot best, average, and minimum fitness across all completed generations.
@@ -252,13 +255,48 @@ class NeuroevolutionTrainer:
 
         plt.xlabel("Generation")
         plt.ylabel("Fitness")
-        plt.title(title, fontsize=10)
+        plt.title(title, fontsize=9)
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
         plt.show()
 
-        # Print global metrics
-        last = self.metrics_log[-1]
-        print(f"Generation: {last['generation']} / {self.generations}")
-        print(f"\nAlltime best: {self.best_fitness:.2f}")
+    def save_metrics(self):
+        """
+        Save best, average, and minimum fitness across all completed generations.
+        Displays configured hyperparameters in the plot title.
+        Clears previous output to keep the notebook clean (for Jupyter).
+        """
+        if not self.metrics_log:
+            print("No metrics to save.")
+            return
+
+        generations = [m["generation"] for m in self.metrics_log]
+        best = [m["best"] for m in self.metrics_log]
+        avg = [m["avg"] for m in self.metrics_log]
+        min_ = [m["min"] for m in self.metrics_log]
+
+        # Compose title with hyperparameters
+        title = (
+            f"Env: {self.env_name} | Actions: {len(self.action_set)} | Gens: {self.generations} | Pop: {self.population_size} | "
+            f"MaxSteps: {self.max_steps_per_episode} | "
+            f"MutRateRange: {self.mutation_rate_range} | MutStrRange: {self.mutation_strength_range} | "
+            f"RouletteWheelTemp: {self.roulette_wheel_selection_temperature} | Elitism: {self.elitism}"
+        )
+
+        plt.figure(figsize=(12, 6))
+        plt.plot(generations, best, label="Best Fitness", color="green", linewidth=1)
+        plt.plot(generations, avg, label="Average Fitness", color="blue", linewidth=3)
+        plt.plot(generations, min_, label="Min Fitness", color="red", linewidth=1)
+
+        plt.xlabel("Generation")
+        plt.ylabel("Fitness")
+        plt.title(title, fontsize=9)
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        plt.savefig(os.path.join(self.output_dir, "fitness_plot.png"), dpi=300)
+        plt.close()
+        print(f"Fitness plot saved to {os.path.join(self.output_dir, 'fitness_plot.png')}")
