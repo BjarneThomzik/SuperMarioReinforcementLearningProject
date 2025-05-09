@@ -23,7 +23,8 @@ class NeuroevolutionTrainer:
 
     def __init__(self, base_model: NeuroevolutionNet, env_name: str, action_set: list, device: torch.device,
                  video_dir: str, generations: int, population_size: int, max_steps_per_episode: int,
-                 mutation_rate: float, mutation_strength: float, wheel_selection_temperature: float, elitism: int):
+                 mutation_rate_range: tuple[float, float], mutation_strength_range: tuple[float, float],
+                 roulette_wheel_selection_temperature: float, elitism: int):
         """
         Initialize the neuroevolution trainer.
 
@@ -44,9 +45,9 @@ class NeuroevolutionTrainer:
         self.generations = generations
         self.population_size = population_size
         self.max_steps_per_episode = max_steps_per_episode
-        self.mutation_rate = mutation_rate
-        self.mutation_strength = mutation_strength
-        self.wheel_selection_temperature = wheel_selection_temperature
+        self.mutation_rate_range = mutation_rate_range
+        self.mutation_strength_range = mutation_strength_range
+        self.roulette_wheel_selection_temperature = roulette_wheel_selection_temperature
         self.elitism = elitism
 
         self.best_agent = None
@@ -72,7 +73,7 @@ class NeuroevolutionTrainer:
 
     def clone_and_mutate(self, net: NeuroevolutionNet) -> NeuroevolutionNet:
         """
-        Create a mutated clone of the given neural network.
+        Clone a model and apply random mutation within specified ranges.
 
         Args:
             net (NeuroevolutionNet): The source model to clone and mutate.
@@ -84,7 +85,9 @@ class NeuroevolutionTrainer:
                                     cnn_config=self.base_model.cnn_config, mlp_config=self.base_model.mlp_config).to(
             self.device)
         new_net.load_state_dict(net.state_dict())
-        new_net.mutate(self.mutation_rate, self.mutation_strength)
+        rate = np.random.uniform(*self.mutation_rate_range)
+        strength = np.random.uniform(*self.mutation_strength_range)
+        new_net.mutate(rate, strength)
         return new_net
 
     def _select_parent(self, agents, fitnesses):
@@ -102,7 +105,7 @@ class NeuroevolutionTrainer:
             norm_fitnesses = (fitnesses - min_f) / (max_f - min_f)
 
         # Apply softmax with temperature
-        logits = norm_fitnesses / self.wheel_selection_temperature
+        logits = norm_fitnesses / self.roulette_wheel_selection_temperature
         probabilities = scipy.special.softmax(logits)
 
         # Sample parent index based on probabilities
