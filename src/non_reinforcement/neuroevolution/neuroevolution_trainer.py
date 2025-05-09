@@ -192,6 +192,7 @@ class NeuroevolutionTrainer:
     def plot_metrics(self):
         """
         Plot best, average, and minimum fitness across all completed generations.
+        Displays configured hyperparameters in the plot title.
         Clears previous output to keep the notebook clean (for Jupyter).
         """
         if not self.metrics_log:
@@ -203,17 +204,24 @@ class NeuroevolutionTrainer:
         avg = [m["avg"] for m in self.metrics_log]
         min_ = [m["min"] for m in self.metrics_log]
 
-        # Clear output
+        # Compose title with hyperparameters
+        title = (
+            f"Env: {self.env_name} | Actions: {len(self.action_set)} | Gens: {self.generations} | Pop: {self.population_size} | "
+            f"MaxSteps: {self.max_steps_per_episode} | "
+            f"MutRateRange: {self.mutation_rate_range} | MutStrRange: {self.mutation_strength_range} | "
+            f"RouletteWheelTemp: {self.roulette_wheel_selection_temperature} | Elitism: {self.elitism}"
+        )
+
         clear_output()
 
-        plt.figure(figsize=(10, 5))
-        plt.plot(generations, best, label="Best Fitness", color="green", linewidth=1)
+        plt.figure(figsize=(12, 6))
+        plt.plot(generations, best, label="Best Fitness", color="green", linewidth=3)
         plt.plot(generations, avg, label="Average Fitness", color="blue", linewidth=5)
         plt.plot(generations, min_, label="Min Fitness", color="red", linewidth=1)
 
         plt.xlabel("Generation")
         plt.ylabel("Fitness")
-        plt.title("Neuroevolution Training Progress")
+        plt.title(title, fontsize=10)
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
