@@ -181,13 +181,43 @@ class NeuroevolutionTrainer:
             print("No best agent available. Please run training first.")
             return
 
-        env = self.make_env(record=True)
+        # Create filename based on hyperparameters
+        base_filename = (
+            f"fitness_{int(self.best_fitness)}__"
+            f"env_name_{self.env_name}__"
+            f"actions{len(self.action_set)}__"
+            f"gens{self.generations}__"
+            f"pop_size{self.population_size}__"
+            f"max_steps_{self.max_steps_per_episode}__"
+            f"mut_rate_range{self.mutation_rate_range[0]:.2f}-{self.mutation_rate_range[1]:.2f}__"
+            f"mut_strength_range{self.mutation_strength_range[0]:.2f}-{self.mutation_strength_range[1]:.2f}__"
+            f"wheel_sel_temperature{self.roulette_wheel_selection_temperature:.2f}__"
+            f"elitism_{self.elitism}"
+        )
+
+        # Ensure unique filename
+        filename = base_filename
+        i = 1
+        while os.path.exists(os.path.join(self.video_dir, f"{filename}.mp4")):
+            filename = f"{base_filename} ({i})"
+            i += 1
+
+        # Record
+        env = JoypadSpace(gym_super_mario_bros.make(self.env_name), self.action_set)
+        env = RecordVideo(env, video_folder=self.video_dir, name_prefix=filename, episode_trigger=lambda x: True)
+
         print("\nRunning best agent for recording...")
         final_fitness = self.best_agent.evaluate(env)
         env.close()
 
+        # Rename file to remove "-episode-0"
+        original_path = os.path.join(self.video_dir, f"{filename}-episode-0.mp4")
+        final_path = os.path.join(self.video_dir, f"{filename}.mp4")
+        if os.path.exists(original_path):
+            os.rename(original_path, final_path)
+
         print(f"\nFinal fitness: {final_fitness:.2f}")
-        print(f"Video saved to: {self.video_dir}")
+        print(f"Video saved to: {self.video_dir}/{filename}.mp4")
 
     def plot_metrics(self):
         """
@@ -215,8 +245,8 @@ class NeuroevolutionTrainer:
         clear_output()
 
         plt.figure(figsize=(12, 6))
-        plt.plot(generations, best, label="Best Fitness", color="green", linewidth=3)
-        plt.plot(generations, avg, label="Average Fitness", color="blue", linewidth=5)
+        plt.plot(generations, best, label="Best Fitness", color="green", linewidth=1)
+        plt.plot(generations, avg, label="Average Fitness", color="blue", linewidth=3)
         plt.plot(generations, min_, label="Min Fitness", color="red", linewidth=1)
 
         plt.xlabel("Generation")
