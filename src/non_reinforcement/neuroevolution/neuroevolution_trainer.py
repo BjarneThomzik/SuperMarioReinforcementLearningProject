@@ -181,9 +181,9 @@ class NeuroevolutionTrainer:
             print("No best agent available. Please run training first.")
             return
 
-        # Create filename based on hyperparameters
-        base_filename = (
-            f"fitness_{int(self.best_fitness)}__"
+        # Create base folder name from hyperparameters
+        base_name = (
+            f"max_fitness_{int(self.best_fitness)}__"
             f"env_name_{self.env_name}__"
             f"actions{len(self.action_set)}__"
             f"gens{self.generations}__"
@@ -195,29 +195,30 @@ class NeuroevolutionTrainer:
             f"elitism_{self.elitism}"
         )
 
-        # Ensure unique filename
-        filename = base_filename
+        # Create unique output directory for this run
+        run_dir = os.path.join(self.video_dir, base_name)
         i = 1
-        while os.path.exists(os.path.join(self.video_dir, f"{filename}.mp4")):
-            filename = f"{base_filename} ({i})"
+        while os.path.exists(run_dir):
+            run_dir = os.path.join(self.video_dir, f"{base_name} ({i})")
             i += 1
+        os.makedirs(run_dir)
 
-        # Record
+        # Create recording environment that writes to this folder
         env = JoypadSpace(gym_super_mario_bros.make(self.env_name), self.action_set)
-        env = RecordVideo(env, video_folder=self.video_dir, name_prefix=filename, episode_trigger=lambda x: True)
+        env = RecordVideo(env, video_folder=run_dir, name_prefix="best_agent", episode_trigger=lambda x: True)
 
         print("\nRunning best agent for recording...")
         final_fitness = self.best_agent.evaluate(env)
         env.close()
 
-        # Rename file to remove "-episode-0"
-        original_path = os.path.join(self.video_dir, f"{filename}-episode-0.mp4")
-        final_path = os.path.join(self.video_dir, f"{filename}.mp4")
+        # Rename video to cleaner name
+        original_path = os.path.join(run_dir, "best_agent-episode-0.mp4")
+        final_path = os.path.join(run_dir, "best_agent.mp4")
         if os.path.exists(original_path):
             os.rename(original_path, final_path)
 
         print(f"\nFinal fitness: {final_fitness:.2f}")
-        print(f"Video saved to: {self.video_dir}/{filename}.mp4")
+        print(f"Video saved to: {final_path}")
 
     def plot_metrics(self):
         """
