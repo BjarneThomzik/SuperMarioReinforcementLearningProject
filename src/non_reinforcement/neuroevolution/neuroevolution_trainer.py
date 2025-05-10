@@ -184,16 +184,10 @@ class NeuroevolutionTrainer:
 
         # Create base folder name from hyperparameters
         base_name = (
-            f"m_fit_{int(self.best_fitness)}__"
-            f"e_name_{self.env_name}__"
-            f"actions{len(self.action_set)}__"
-            f"gens{self.generations}__"
-            f"p_size{self.population_size}__"
-            f"m_steps_{self.max_steps_per_episode}__"
-            f"mu_rate_range{self.mutation_rate_range[0]:.2f}-{self.mutation_rate_range[1]:.2f}__"
-            f"mu_str_range{self.mutation_strength_range[0]:.2f}-{self.mutation_strength_range[1]:.2f}__"
-            f"temp{self.roulette_wheel_selection_temperature:.2f}__"
-            f"elitism_{self.elitism}"
+            f"max_fit_{int(self.best_fitness)}__"
+            f"avg_fit_{int(np.mean([m['avg'] for m in self.metrics_log]))}__"
+            f"env_name_{self.env_name}__"
+            f"action_set_{len(self.action_set)}"
         )
 
         # Create unique output directory for this run
@@ -217,6 +211,11 @@ class NeuroevolutionTrainer:
         final_path = os.path.join(run_dir, "best_agent.mp4")
         if os.path.exists(original_path):
             os.rename(original_path, final_path)
+
+        # Delete the .meta.json file
+        meta_path = os.path.join(run_dir, "best_agent-episode-0.meta.json")
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
 
         print(f"\nFinal fitness: {final_fitness:.2f}")
         print(f"Video saved to: {final_path}")
