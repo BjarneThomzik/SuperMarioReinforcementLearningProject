@@ -184,15 +184,15 @@ class NeuroevolutionTrainer:
 
         # Create base folder name from hyperparameters
         base_name = (
-            f"max_fitness_{int(self.best_fitness)}__"
-            f"env_name_{self.env_name}__"
+            f"m_fit_{int(self.best_fitness)}__"
+            f"e_name_{self.env_name}__"
             f"actions{len(self.action_set)}__"
             f"gens{self.generations}__"
-            f"pop_size{self.population_size}__"
-            f"max_steps_{self.max_steps_per_episode}__"
-            f"mut_rate_range{self.mutation_rate_range[0]:.2f}-{self.mutation_rate_range[1]:.2f}__"
-            f"mut_strength_range{self.mutation_strength_range[0]:.2f}-{self.mutation_strength_range[1]:.2f}__"
-            f"wheel_sel_temperature{self.roulette_wheel_selection_temperature:.2f}__"
+            f"p_size{self.population_size}__"
+            f"m_steps_{self.max_steps_per_episode}__"
+            f"mu_rate_range{self.mutation_rate_range[0]:.2f}-{self.mutation_rate_range[1]:.2f}__"
+            f"mu_str_range{self.mutation_strength_range[0]:.2f}-{self.mutation_strength_range[1]:.2f}__"
+            f"temp{self.roulette_wheel_selection_temperature:.2f}__"
             f"elitism_{self.elitism}"
         )
 
