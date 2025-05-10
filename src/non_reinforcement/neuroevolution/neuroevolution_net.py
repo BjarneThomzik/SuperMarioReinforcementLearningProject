@@ -91,3 +91,21 @@ class NeuroevolutionNet(nn.Module):
                     mask = torch.rand_like(param) < mutation_rate
                     noise = torch.normal(mean=0.0, std=mutation_strength, size=param.shape, device=param.device)
                     param.add_(mask * noise)
+
+    def save_model(self, path: str, input_channels: int, action_set: List[str]):
+        """
+        Saves the model weights and architecture metadata.
+
+        Args:
+            path (str): File path to save the model.
+            input_channels (int): Number of input channels (e.g. 1 for grayscale).
+            action_set (List[str]): Action list used in the training environment.
+        """
+        torch.save({
+            "state_dict": self.state_dict(),
+            "cnn_config": self.cnn_config,
+            "mlp_config": self.mlp_config,
+            "input_channels": input_channels,
+            "num_actions": self.num_actions,
+            "action_set": action_set,
+        }, path)

@@ -22,7 +22,7 @@ class NeuroevolutionTrainer:
     """
 
     def __init__(self, base_model: NeuroevolutionNet, env_name: str, action_set: list, device: torch.device,
-                 video_dir: str, generations: int, population_size: int, max_steps_per_episode: int,
+                 directory: str, generations: int, population_size: int, max_steps_per_episode: int,
                  mutation_rate_range: tuple[float, float], mutation_strength_range: tuple[float, float],
                  roulette_wheel_selection_temperature: float, elitism: int):
         """
@@ -33,7 +33,7 @@ class NeuroevolutionTrainer:
             env_name (str): Name of the Gym environment (e.g., "SuperMarioBros-v0").
             action_set (list): List of discrete actions to use (e.g., COMPLEX_MOVEMENT).
             device (torch.device): The device to run models on (e.g., CPU or CUDA).
-            video_dir (str): Directory to save the evaluation video of the best agent.
+            directory (str): Directory to save the evaluation video of the best agent.
             generations (int): Number of generations to evolve over.
             population_size (int): Number of agents per generation.
         """
@@ -41,7 +41,7 @@ class NeuroevolutionTrainer:
         self.env_name = env_name
         self.action_set = action_set
         self.device = device
-        self.video_dir = video_dir
+        self.directory = directory
         self.generations = generations
         self.population_size = population_size
         self.max_steps_per_episode = max_steps_per_episode
@@ -55,7 +55,7 @@ class NeuroevolutionTrainer:
         self.metrics_log = []
         self.output_dir = None
 
-        os.makedirs(self.video_dir, exist_ok=True)
+        os.makedirs(self.directory, exist_ok=True)
 
     def make_env(self, record: bool = False) -> Env:
         """
@@ -69,7 +69,7 @@ class NeuroevolutionTrainer:
         """
         env = JoypadSpace(gym_super_mario_bros.make(self.env_name), self.action_set)
         if record:
-            env = RecordVideo(env, self.video_dir, episode_trigger=lambda x: True)
+            env = RecordVideo(env, self.directory, episode_trigger=lambda x: True)
         return env
 
     def clone_and_mutate(self, net: NeuroevolutionNet) -> NeuroevolutionNet:
@@ -191,10 +191,10 @@ class NeuroevolutionTrainer:
         )
 
         # Create unique output directory for this run
-        run_dir = os.path.join(self.video_dir, base_name)
+        run_dir = os.path.join(self.directory, base_name)
         i = 1
         while os.path.exists(run_dir):
-            run_dir = os.path.join(self.video_dir, f"{base_name} ({i})")
+            run_dir = os.path.join(self.directory, f"{base_name} ({i})")
             i += 1
         os.makedirs(run_dir)
 
@@ -208,7 +208,7 @@ class NeuroevolutionTrainer:
 
         # Rename video to cleaner name
         original_path = os.path.join(run_dir, "best_agent-episode-0.mp4")
-        final_path = os.path.join(run_dir, "best_agent.mp4")
+        final_path = os.path.join(run_dir, f"fitness_{self.best_fitness}.mp4")
         if os.path.exists(original_path):
             os.rename(original_path, final_path)
 
@@ -299,3 +299,17 @@ class NeuroevolutionTrainer:
         plt.savefig(os.path.join(self.output_dir, "fitness_plot.png"), dpi=300)
         plt.close()
         print(f"Fitness plot saved to {os.path.join(self.output_dir, 'fitness_plot.png')}")
+
+    def save_best_model(self):
+        """
+        Saves the best model found during training.
+        """
+
+        if self.best_agent is None:
+            print("No best agent available to save.")
+            return
+
+        model = self.best_agent.neuroevolution_net
+        directory = f"{self.output_dir}/best_model_{self.best_fitness}.pt"
+        model.save_model(directory, input_channels=1, action_set=self.action_set)
+        print(f"Best model saved to {directory}")
