@@ -313,3 +313,15 @@ class NeuroevolutionTrainer:
         directory = f"{self.output_dir}/best_model_{self.best_fitness}.pt"
         model.save_model(directory, input_channels=1, action_set=self.action_set)
         print(f"Best model saved to {directory}")
+
+    def load_model(self, path: str):
+        """
+        Loads a saved model and sets it as the new base_model.
+
+        Args:
+            path (str): Path to the saved model file.
+        """
+        model, action_set = NeuroevolutionNet.load_model(path)
+        self.base_model = model
+        self.action_set = action_set
+        print(f"Loaded model from {path} as base model.")

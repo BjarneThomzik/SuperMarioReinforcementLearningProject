@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 
 class NeuroevolutionNet(nn.Module):
@@ -109,3 +109,24 @@ class NeuroevolutionNet(nn.Module):
             "num_actions": self.num_actions,
             "action_set": action_set,
         }, path)
+
+    @staticmethod
+    def load_model(path: str) -> Tuple["NeuroevolutionNet", List[str]]:
+        """
+        Loads a saved model and returns it along with its action set.
+
+        Args:
+            path (str): Path to the saved model file.
+
+        Returns:
+            Tuple[NeuroevolutionNet, List[str]]: Loaded model and action list.
+        """
+        checkpoint = torch.load(path, map_location="cpu")
+        model = NeuroevolutionNet(
+            input_channels=checkpoint["input_channels"],
+            num_actions=checkpoint["num_actions"],
+            cnn_config=checkpoint["cnn_config"],
+            mlp_config=checkpoint["mlp_config"]
+        )
+        model.load_state_dict(checkpoint["state_dict"])
+        return model, checkpoint.get("action_set", [])
