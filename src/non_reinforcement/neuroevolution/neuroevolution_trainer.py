@@ -1,4 +1,5 @@
 import copy
+import math
 import os
 
 import numpy as np
@@ -24,7 +25,8 @@ class NeuroevolutionTrainer:
     def __init__(self, base_model: NeuroevolutionNet, env_name: str, action_set: list, device: torch.device,
                  directory: str, generations: int, population_size: int, max_steps_per_episode: int,
                  mutation_rate_range: tuple[float, float], mutation_strength_range: tuple[float, float],
-                 roulette_wheel_selection_temperature: float, elitism: int):
+                 roulette_wheel_selection_temperature: float, elitism: int, mutation_rate_sigmoid_decay: dict = None,
+                 mutation_strength_sigmoid_decay: dict = None):
         """
         Initialize the neuroevolution trainer.
 
@@ -49,6 +51,8 @@ class NeuroevolutionTrainer:
         self.mutation_strength_range = mutation_strength_range
         self.roulette_wheel_selection_temperature = roulette_wheel_selection_temperature
         self.elitism = elitism
+        self.mutation_rate_sigmoid_decay = mutation_rate_sigmoid_decay
+        self.mutation_strength_sigmoid_decay = mutation_strength_sigmoid_decay
 
         self.best_agent = None
         self.best_fitness = float('-inf')
@@ -72,7 +76,7 @@ class NeuroevolutionTrainer:
             env = RecordVideo(env, self.directory, episode_trigger=lambda x: True)
         return env
 
-    def clone_and_mutate(self, net: NeuroevolutionNet) -> NeuroevolutionNet:
+    def clone_and_mutate(self, net: NeuroevolutionNet, generation: int) -> NeuroevolutionNet:
         """
         Clone a model and apply random mutation within specified ranges.
 
@@ -86,8 +90,21 @@ class NeuroevolutionTrainer:
                                     cnn_config=self.base_model.cnn_config, mlp_config=self.base_model.mlp_config).to(
             self.device)
         new_net.load_state_dict(net.state_dict())
-        rate = np.random.uniform(*self.mutation_rate_range)
-        strength = np.random.uniform(*self.mutation_strength_range)
+
+        if self.mutation_rate_sigmoid_decay:
+            a, b, c = self.mutation_rate_sigmoid_decay["a"], self.mutation_rate_sigmoid_decay["b"], \
+                self.mutation_rate_sigmoid_decay["c"]
+            rate = self._sigmoid_decay(generation, a, b, c)
+        else:
+            rate = np.random.uniform(*self.mutation_rate_range)
+
+        if self.mutation_strength_sigmoid_decay:
+            a, b, c = self.mutation_strength_sigmoid_decay["a"], self.mutation_strength_sigmoid_decay["b"], \
+                self.mutation_strength_sigmoid_decay["c"]
+            strength = self._sigmoid_decay(generation, a, b, c)
+        else:
+            strength = np.random.uniform(*self.mutation_strength_range)
+
         new_net.mutate(rate, strength)
         return new_net
 
@@ -113,7 +130,7 @@ class NeuroevolutionTrainer:
         index = np.random.choice(len(agents), p=probabilities)
         return agents[index].neuroevolution_net
 
-    def _create_population(self, agents, fitnesses):
+    def _create_population(self, agents, fitnesses, generation: int):
         """
         Creates a new population via fitness-proportional selection and elitism.
         Elitism: Keep the self.elitism number of the best agents without mutation.
@@ -132,7 +149,7 @@ class NeuroevolutionTrainer:
         # Select the rest of the agents with fitness proportionate selection and mutate them
         while len(new_agents) < self.population_size:
             parent_net = self._select_parent(agents, fitnesses)
-            child_net = self.clone_and_mutate(parent_net)
+            child_net = self.clone_and_mutate(parent_net, generation)
             new_agents.append(NeuroevolutionAgent(child_net, self.max_steps_per_episode))
 
         return new_agents
@@ -171,7 +188,7 @@ class NeuroevolutionTrainer:
             self.plot_metrics()
 
             # Create new population with fitness proportional selection
-            agents = self._create_population(agents, fitnesses)
+            agents = self._create_population(agents, fitnesses, generation)
 
     def record_best_agent(self):
         """
@@ -325,3 +342,19 @@ class NeuroevolutionTrainer:
         self.base_model = model
         self.action_set = action_set
         print(f"Loaded model from {path} as base model.")
+
+    @staticmethod
+    def _sigmoid_decay(x: int, a: float, b: float, c: float) -> float:
+        """
+        Compute the value of a shifted sigmoid decay function.
+
+        Args:
+            x (int): Input value (e.g., step, iteration, or epoch).
+            a (float): Vertical shift applied to the curve.
+            b (float): Controls the steepness of the curve (positive values produce a decay).
+            c (float): Horizontal shift (the x-value at the inflection point).
+
+        Returns:
+            float: The value of the sigmoid decay function at x.
+        """
+        return 1 / (1 + math.exp(b * (x - c))) + a
