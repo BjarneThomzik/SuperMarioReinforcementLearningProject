@@ -255,11 +255,13 @@ class NeuroevolutionTrainer:
         min_ = [m["min"] for m in self.metrics_log]
 
         # Compose title with hyperparameters
+        decay_info = self._get_decay_description()
         title = (
             f"Env: {self.env_name} | Actions: {len(self.action_set)} | Gens: {self.generations} | Pop: {self.population_size} | "
             f"MaxSteps: {self.max_steps_per_episode} | "
             f"MutRateRange: {self.mutation_rate_range} | MutStrRange: {self.mutation_strength_range} | "
             f"RouletteWheelTemp: {self.roulette_wheel_selection_temperature} | Elitism: {self.elitism}"
+            f"\n{decay_info}"
         )
 
         clear_output()
@@ -293,11 +295,13 @@ class NeuroevolutionTrainer:
         min_ = [m["min"] for m in self.metrics_log]
 
         # Compose title with hyperparameters
+        decay_info = self._get_decay_description()
         title = (
             f"Env: {self.env_name} | Actions: {len(self.action_set)} | Gens: {self.generations} | Pop: {self.population_size} | "
             f"MaxSteps: {self.max_steps_per_episode} | "
             f"MutRateRange: {self.mutation_rate_range} | MutStrRange: {self.mutation_strength_range} | "
             f"RouletteWheelTemp: {self.roulette_wheel_selection_temperature} | Elitism: {self.elitism}"
+            f"\n{decay_info}"
         )
 
         plt.figure(figsize=(12, 6))
@@ -358,3 +362,22 @@ class NeuroevolutionTrainer:
             float: The value of the sigmoid decay function at x.
         """
         return 1 / (1 + math.exp(b * (x - c))) + a
+
+    def _get_decay_description(self) -> str:
+        """
+        Returns a short string describing the configured sigmoid decay functions
+        for mutation rate and strength, or "No decay" if none are set.
+        """
+
+        def format_sigmoid(name: str, params: dict) -> str:
+            a, b, c = params["a"], params["b"], params["c"]
+            return f"{name}: f(x)=1/(1+e^({b:.3f}*(x-{c:.0f}))) + {a:.3f}"
+
+        parts = []
+
+        if self.mutation_rate_sigmoid_decay:
+            parts.append(format_sigmoid("RateDecay", self.mutation_rate_sigmoid_decay))
+        if self.mutation_strength_sigmoid_decay:
+            parts.append(format_sigmoid("StrengthDecay", self.mutation_strength_sigmoid_decay))
+
+        return " | ".join(parts) if parts else "No decay"
