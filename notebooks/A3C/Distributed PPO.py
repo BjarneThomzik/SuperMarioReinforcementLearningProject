@@ -36,11 +36,11 @@ class DeadlockEnv(gym.Wrapper):
         state, reward, done, info = self.env.step(action)
         x_pos = info['x_pos']
         if x_pos > self.max_xpos:
-            x_pos = self.max_xpos
+            self.max_xpos = x_pos
 
         if x_pos <= self.max_xpos:
             self.count += 1
-        if x_pos >= self.max_xpos:
+        if x_pos > self.max_xpos:
             reward += 1
         else:
             self.count = 0
