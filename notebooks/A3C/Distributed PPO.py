@@ -1,6 +1,8 @@
 import numpy as np
+import traceback
 import torch
 import torch.nn as nn
+from torch.multiprocessing import Queue
 from torch.distributions import Categorical
 import torch.multiprocessing as mp
 from nes_py.wrappers import JoypadSpace
@@ -17,6 +19,7 @@ import os
 class DeadlockEnv(gym.Wrapper):
     def __init__(self, env, threshold=20):
         super().__init__(env)
+        self.max_xpos = 0
         self.last_x_pos = 0
         self.count = 0
         self.threshold = threshold
@@ -32,9 +35,13 @@ class DeadlockEnv(gym.Wrapper):
     def step(self, action):
         state, reward, done, info = self.env.step(action)
         x_pos = info['x_pos']
+        if x_pos > self.max_xpos:
+            x_pos = self.max_xpos
 
-        if x_pos <= self.last_x_pos:
+        if x_pos <= self.max_xpos:
             self.count += 1
+        if x_pos >= self.max_xpos:
+            reward += 1
         else:
             self.count = 0
             self.last_x_pos = x_pos
@@ -92,81 +99,155 @@ class Actor_Critic(nn.Module):
     def __init__(self, env=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.env = env
-
+        """
+                    nn.Linear(3840, 64),
+                    nn.Tanh(),
+                    nn.Linear(64, 64),
+                    nn.Tanh(),
+                    nn.Linear(64, 7),
+                    nn.Softmax(dim=-1)
+        """
         self.actor = nn.Sequential(
-            nn.Linear(3840, 64),
-            nn.Tanh(),
-            nn.Linear(64, 64),
-            nn.Tanh(),
-            nn.Linear(64, 7),
+            nn.Conv2d(1, 32, 8, stride=4),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 4, stride=2),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(64 * 6 * 6, 256),
+            nn.ReLU(),
+            nn.Linear(256, 7),
             nn.Softmax(dim=-1)
         )
         self.critic = nn.Sequential(
-            nn.Linear(3840, 64),
-            nn.Tanh(),
-            nn.Linear(64, 64),
-            nn.Tanh(),
-            nn.Linear(64, 1)
+            nn.Conv2d(1, 32, 8, stride=4),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 4, stride=2),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(64 * 6 * 6, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
         )
 
     def act(self, state):
-        action_probs = self.actor(state)
+        action_probs = self.actor(state.unsqueeze(0).unsqueeze(0))
         dist = Categorical(action_probs)
         action = dist.sample()
         action_logprob = dist.log_prob(action)
-        state_value = self.critic(state)
+        state_value = self.critic(state.unsqueeze(0).unsqueeze(0))
         return action.detach(), action_logprob.detach(), state_value.detach()
 
-    def evaluate(self, state, action):
-        action_probs = self.actor(state)
-        dist = Categorical(action_probs)
-        action_logprobs = dist.log_prob(action)
-        dist_entropy = dist.entropy()
-        state_values = self.critic(state)
-        return action_logprobs, state_values, dist_entropy
+    def evaluate(self, states, actions):
+        """
+        Evaluiert States - unterstützt sowohl einzelne States als auch Batches
+        States Format: [batch, height, width] für Batches oder [height, width] für einzelne States
+        """
+        # Prüfen ob states ein Batch ist
+        if len(states.shape) == 3:  # Batch von States [batch, height, width]
+            batch_size = states.shape[0]
+
+            # Channel-Dimension hinzufügen für Conv2D: [batch, 1, height, width]
+            states = states.unsqueeze(1)
+
+            # Forward pass durch das Netzwerk
+            action_probs = self.actor(states)
+            state_values = self.critic(states).squeeze(-1)  # [batch_size]
+
+            # Actions zu Tensor konvertieren falls nötig
+            if not isinstance(actions, torch.Tensor):
+                actions = torch.tensor(actions, device=states.device, dtype=torch.long)
+
+            # Log probabilities berechnen
+            dist = torch.distributions.Categorical(action_probs)
+            logprobs = dist.log_prob(actions)
+            entropy = dist.entropy()
+
+            return logprobs, state_values, entropy
+
+        elif len(states.shape) == 2:  # Einzelner State [height, width]
+            # Batch- und Channel-Dimension hinzufügen
+            states = states.unsqueeze(0).unsqueeze(0)  # [1, 1, height, width]
+
+            # Action zu Tensor mit Batch-Dimension
+            if not isinstance(actions, torch.Tensor):
+                actions = torch.tensor([actions], device=states.device, dtype=torch.long)
+            else:
+                actions = actions.unsqueeze(0) if actions.dim() == 0 else actions
+
+            # Forward pass
+            action_probs = self.actor(states)
+            state_values = self.critic(states).squeeze(-1)
+
+            # Distribution und Berechnungen
+            dist = torch.distributions.Categorical(action_probs)
+            logprobs = dist.log_prob(actions)
+            entropy = dist.entropy()
+
+            # Batch-Dimension wieder entfernen für einzelne States
+            return logprobs.squeeze(0), state_values.squeeze(0), entropy.squeeze(0)
+
+        else:
+            raise ValueError(f"Unerwartete State-Dimensionen: {states.shape}. "
+                             f"Erwartet: [height, width] oder [batch, height, width]")
 
     def forward(self, state):
-        action_probs = self.actor(state)
-        value = self.critic(state)
+        action_probs = self.actor(state.unsqueeze(0).unsqueeze(0))
+        value = self.critic(state.unsqueeze(0).unsqueeze(0))
         return action_probs, value
 
 
-def ppo_worker_fn(worker_id, shared_state_dict, queue, env_fn, n_steps=128, max_episodes=500000):
-    """
-    Worker-Funktion für parallele Datensammlung
-    """
+def ppo_worker_fn(worker_id, shared_state_dict, queue, env_fn, n_steps=128, max_episodes=5000):
     try:
+        print(f"[Worker {worker_id}] Initializing environment...")
         env = env_fn()
-        local_model = Actor_Critic()
 
-        # Lade aktuelle Gewichte
+        print(f"[Worker {worker_id}] Initializing model...")
+        local_model = Actor_Critic()
         local_model.load_state_dict(dict(shared_state_dict))
         local_model.eval()
-
         state = env.reset()
         done = False
         episode_count = 0
 
-        print(f"[Worker {worker_id}] Starting data collection")
+        print(f"[Worker {worker_id}] Started successfully.")
 
         while episode_count < max_episodes:
+            #print(f"[Worker {worker_id}] Starting episode {episode_count+1}")
             states, actions, logprobs, rewards, dones, values = [], [], [], [], [], []
 
-            for _ in range(n_steps):
+            for step in range(n_steps):
                 if done:
+                    #print(f"[Worker {worker_id}] Episode done. Resetting environment.")
                     state = env.reset()
                     episode_count += 1
                     if episode_count >= max_episodes:
+                        print(f"epC {episode_count} real{max_episodes}")
+                        print(f"[Worker {worker_id}] Reached max episodes.")
                         break
 
-                # Preprocessing
-                processed_state = GrayScale(Downsample(4, state)).flatten()
-                state_tensor = torch.from_numpy(processed_state).float()
+                if state is None:
+                    print(f"[Worker {worker_id}] Warning: Got None state. Skipping step.")
+                    continue
+
+                try:
+                    processed_state = GrayScale(Downsample(4, state))
+                    state_tensor = torch.from_numpy(processed_state).float()
+                except Exception as e:
+                    print(f"[Worker {worker_id}] Error preprocessing state: {e}")
+                    traceback.print_exc()
+                    queue.put(None)
+                    return
 
                 with torch.no_grad():
                     action, logprob, value = local_model.act(state_tensor)
 
-                next_state, reward, done, info = env.step(action.item())
+                try:
+                    next_state, reward, done, info = env.step(action.item())
+                except Exception as e:
+                    print(f"[Worker {worker_id}] Error during env.step(): {e}")
+                    traceback.print_exc()
+                    queue.put(None)
+                    return
 
                 states.append(state_tensor)
                 actions.append(action)
@@ -177,39 +258,48 @@ def ppo_worker_fn(worker_id, shared_state_dict, queue, env_fn, n_steps=128, max_
 
                 state = next_state
 
-            if len(states) == 0:
+            if not states:
+                print(f"[Worker {worker_id}] No data collected. Breaking...")
                 break
 
-
             with torch.no_grad():
-                processed_next_state = GrayScale(Downsample(4, state)).flatten()
-                next_tensor = torch.from_numpy(processed_next_state).float()
-                next_value = local_model.critic(next_tensor) if not done else torch.tensor([0.0])
+                try:
+                    processed_next_state = GrayScale(Downsample(4, state))
+                    next_tensor = torch.from_numpy(processed_next_state).float()
+                    next_value = local_model.critic(next_tensor.unsqueeze(0).unsqueeze(0)) if not done else torch.tensor([0.0])
+                except Exception as e:
+                    print(f"[Worker {worker_id}] Error in value estimation: {e}")
+                    traceback.print_exc()
+                    queue.put(None)
+                    return
 
             traj = {
-                "states": torch.stack(states),
-                "actions": torch.stack(actions),
-                "logprobs": torch.stack(logprobs),
-                "rewards": torch.stack(rewards),
-                "dones": torch.stack(dones),
-                "values": torch.stack(values),
-                "next_value": next_value,
+                "states": torch.stack(states).numpy(),
+                "actions": torch.stack(actions).numpy(),
+                "logprobs": torch.stack(logprobs).numpy(),
+                "rewards": torch.stack(rewards).numpy(),
+                "dones": torch.stack(dones).numpy(),
+                "values": torch.stack(values).numpy(),
+                "next_value": next_value.numpy(),
                 "worker_id": worker_id
             }
 
+            print(f"[Worker {worker_id}] Sending trajectory to main process.")
 
             queue.put(traj)
 
 
+            # Update local model
             local_model.load_state_dict(dict(shared_state_dict))
 
+        print(f"[Worker {worker_id}] Finished all episodes. Exiting.")
         env.close()
-        print(f"[Worker {worker_id}] Finished data collection")
 
     except Exception as e:
-        print(f"[Worker {worker_id}] Error: {e}")
-        import traceback
+        print(f"[Worker {worker_id}] CRASHED with exception: {e}")
         traceback.print_exc()
+        queue.put(None)
+
 
 
 def compute_advantages(rewards, values, next_value, dones, gamma=0.99, lam=0.95):
@@ -225,7 +315,7 @@ def compute_advantages(rewards, values, next_value, dones, gamma=0.99, lam=0.95)
     return torch.stack(advantages)
 
 
-def evaluate_model(model, env_fn, total_frames=4000, render=False, save_video=False, video_path="mario_gameplay.mp4"):
+def evaluate_model(model, env_fn, total_frames=1000, render=False, save_video=False, video_path="mario_gameplay.mp4"):
     """
     Modell evaluieren über feste Anzahl Frames (startet automatisch neu bei done=True)
     """
@@ -247,7 +337,7 @@ def evaluate_model(model, env_fn, total_frames=4000, render=False, save_video=Fa
 
     for frame in range(total_frames):
         # Preprocessing
-        processed = GrayScale(Downsample(4, state)).flatten()
+        processed = GrayScale(Downsample(4, state))
         tensor = torch.from_numpy(processed).float()
 
 
@@ -278,7 +368,7 @@ def evaluate_model(model, env_fn, total_frames=4000, render=False, save_video=Fa
             episode_rewards.append(current_episode_reward)
             episode_count += 1
             print(
-                f"Episode {episode_count} finished - Reward: {current_episode_reward:.2f} - Frame: {frame + 1}/{total_frames}")
+                f"Episode {episode_count} finished - Reward: {current_episode_reward:.2f} - Length{info['x_pos']} - Frame: {frame + 1}/{total_frames}")
 
 
             state = env.reset()
@@ -371,7 +461,7 @@ def main():
     shared_state_dict.update(policy_model.state_dict())
 
 
-    queue = mp.Queue(maxsize=20)
+    queue = mp.Queue(maxsize=60)
 
 
     optimizer = torch.optim.Adam(policy_model.parameters(), lr=3e-4)
@@ -385,14 +475,14 @@ def main():
     for worker_id in range(num_workers):
         p = mp.Process(
             target=ppo_worker_fn,
-            args=(worker_id, shared_state_dict, queue, make_env, 128, 25)  # 25 Episoden pro Worker
+            args=(worker_id, shared_state_dict, queue, make_env, 128, 500)  # 25 Episoden pro Worker
         )
         p.start()
         workers.append(p)
 
 
     update_count = 0
-    total_updates = 100000  #später erhöhen
+    total_updates = 30  #später erhöhen
 
     print("Starting training loop...")
 
@@ -400,17 +490,20 @@ def main():
         while update_count < total_updates:
             try:
 
-                traj = queue.get(timeout=30)
+                traj = queue.get(timeout=120)
 
                 # Extrahiere Daten
-                states = traj["states"]
-                actions = traj["actions"]
-                old_logprobs = traj["logprobs"]
-                rewards = traj["rewards"]
-                dones = traj["dones"]
-                values = traj["values"]
-                next_value = traj["next_value"]
-                worker_id = traj["worker_id"]
+                states = torch.from_numpy(traj["states"])
+                actions = torch.from_numpy(traj["actions"])
+                old_logprobs = torch.from_numpy(traj["logprobs"])
+                rewards = torch.from_numpy(traj["rewards"])
+                dones = torch.from_numpy(traj["dones"])
+                values = torch.from_numpy(traj["values"])
+                next_value = torch.from_numpy(traj["next_value"])
+                if isinstance(traj["worker_id"], dict):
+                    worker_id = str(traj["worker_id"])
+                else:
+                    worker_id = traj["worker_id"]
 
 
                 advantages = compute_advantages(rewards, values, next_value, dones)
@@ -451,20 +544,37 @@ def main():
 
                     if update_count % 25 == 0:
                         eval_reward = evaluate_model(policy_model, make_env, render=False)
-                        print(f"Evaluation Reward: {eval_reward:.2f}")
+                        #print(f"Evaluation Reward: {eval_reward:.2f}")
+
 
             except Exception as e:
-                print(f"Error in training loop: {e}")  # Hier ist noch ein Bug drin
+
+                print(f"Error in training loop: {e}")
+
+                print("Full traceback:")
+
+                traceback.print_exc()  # Druckt den kompletten Stack-Trace
+
                 break
 
     finally:
 
-        print("Terminating workers...")
+        # Sauberes Beenden
+        print("Sending termination signal to workers...")
+
+        print("TEST1")
+        # Warten bis alle Worker beendet sind
         for p in workers:
+            p.join(timeout=5)
+            print("TEST2")
             if p.is_alive():
+                print(f"Force terminating worker {p.pid}")
                 p.terminate()
-                p.join(timeout=5)
+                print("TEST3")
+                p.join(timeout=2)
+                print("TEST4")
                 if p.is_alive():
+                    print("TEST5")
                     p.kill()
 
         print("Training completed!")
@@ -473,6 +583,8 @@ def main():
 
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    import torch.multiprocessing as mp
     mp.set_start_method('spawn', force=True)
+    torch.multiprocessing.set_sharing_strategy('file_system')
     main()
