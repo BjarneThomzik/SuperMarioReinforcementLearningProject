@@ -162,7 +162,7 @@ def worker_fn(worker_id, global_model, optimizer, env_fn, gamma=0.99, n_steps=10
     states, actions, rewards, logprobs = [], [], [], []
 
     #while True:
-    for i in range(10000):
+    for i in range(15000):
         if i % 100 == 0:
             print(i)
         if done:
