@@ -4,6 +4,16 @@ from collections import deque
 import torch
 from torch import nn
 
+# set device to cpu or cuda
+device = torch.device('cpu')
+if torch.cuda.is_available():
+    device = torch.device('cuda:0')
+    torch.cuda.empty_cache()
+    print("Device set to : " + str(torch.cuda.get_device_name(device)))
+
+else:
+    print("Device set to : cpu")
+    device = torch.device("cpu")
 
 class DQN(nn.Module):
     def __init__(self, action_dim):
@@ -41,7 +51,7 @@ class Agent:
         if torch.rand(1) <= self.epsilon:
             action = torch.randint(low=0, high=self.dqn.action_dim, size=(1,))
         else:
-            state = torch.tensor(state, dtype=torch.float32)
+            state = torch.tensor(state, dtype=torch.float32).to(device)
             with torch.no_grad():
                 q_values = self.dqn(state)
             action = torch.argmax(q_values)
@@ -58,11 +68,11 @@ class Agent:
             return
         batch = random.sample(self.replay_buffer, self.replay_batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
-        states = torch.tensor(states, dtype=torch.float32)
-        actions = torch.tensor(actions, dtype=torch.long)
-        rewards = torch.tensor(rewards, dtype=torch.float32)
-        next_states = torch.tensor(next_states, dtype=torch.float32)
-        dones = torch.tensor(dones, dtype=torch.float32)
+        states = torch.tensor(states, dtype=torch.float32).to(device)
+        actions = torch.tensor(actions, dtype=torch.long).to(device)
+        rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
+        next_states = torch.tensor(next_states, dtype=torch.float32).to(device)
+        dones = torch.tensor(dones, dtype=torch.float32).to(device)
         q_values = self.dqn(states)
         with torch.no_grad():
             next_q_values = self.dqn(next_states)
