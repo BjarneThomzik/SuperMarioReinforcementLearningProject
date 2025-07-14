@@ -5,6 +5,7 @@ from torch.distributions import Categorical
 from nes_py.wrappers import JoypadSpace
 import gym_super_mario_bros
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
+import matplotlib.pyplot as plt
 import torch.optim as optim
 import collections
 import torch
@@ -15,7 +16,7 @@ import cv2
 
 #This environment wrapper is used to stop a run if mario is stuck on a pipe
 class DeadlockEnv(gym.Wrapper):
-    def __init__(self, env, threshold=20):
+    def __init__(self, env, threshold=10):
         super().__init__(env)
         self.last_x_pos = 0
         self.count = 0
@@ -149,7 +150,6 @@ class SharedAdam(torch.optim.Adam):
 
 
 def worker_fn(worker_id, global_model, optimizer, env_fn, gamma=0.99, n_steps=10):
-    print("test2")
     import time
     local_model = Actor_Critic(None)  # Lokale Kopie, ohne `env`
     local_model.actor.load_state_dict(global_model.actor.state_dict())
@@ -162,7 +162,7 @@ def worker_fn(worker_id, global_model, optimizer, env_fn, gamma=0.99, n_steps=10
     states, actions, rewards, logprobs = [], [], [], []
 
     #while True:
-    for i in range(15000):
+    for i in range(5000):
         if i % 100 == 0:
             print(i)
         if done:
@@ -204,7 +204,7 @@ def worker_fn(worker_id, global_model, optimizer, env_fn, gamma=0.99, n_steps=10
             policy_loss = -(new_logprobs * advantage.detach()).mean()
             value_loss = advantage.pow(2).mean()
             entropy_bonus = entropy.mean()
-            total_loss = policy_loss + 0.5 * value_loss - 0.01 * entropy_bonus
+            total_loss = policy_loss + 0.5 * value_loss - 0.1 * entropy_bonus
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -235,10 +235,15 @@ def evaluate_model(model, env_fn, num_frames=400, render=True):
     done = False
     frame_count = 0
     total_reward = 0
+    x_pos = []
+    rewards = []
 
     while frame_count < num_frames:
         if done:
+            x_pos.append(info['x_pos'])
+            rewards.append(total_reward)
             state = env.reset()
+            total_reward = 0
 
         processed = GrayScale(Downsample(4, state)).flatten()
         tensor = torch.from_numpy(processed).float()
@@ -246,7 +251,7 @@ def evaluate_model(model, env_fn, num_frames=400, render=True):
         with torch.no_grad():
             action, _ = model.act(tensor)
 
-        state, reward, done, _ = env.step(action.item())
+        state, reward, done, info = env.step(action.item())
         total_reward += reward
 
         if render:
@@ -257,6 +262,14 @@ def evaluate_model(model, env_fn, num_frames=400, render=True):
 
     env.close()
     print(f"\n[Evaluation] Total Reward over {num_frames} frames: {total_reward:.2f}")
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+    axes[0] = plt.subplot(1, 2, 1)
+    axes[1] = plt.subplot(1, 2, 2)
+
+    axes[0].plot(x_pos)
+    axes[1].plot(rewards)
+    fig.savefig('A3CW:10x50000.png')
 
 
 
@@ -270,7 +283,6 @@ if __name__ == "__main__":
     optimizer = SharedAdam(list(global_model.actor.parameters()) + list(global_model.critic.parameters()), lr=1e-4)
 
     processes = []
-    print("test1")
     for i in range(10):  # Zwei parallele Worker
         p = mp.Process(target=worker_fn, args=(i, global_model, optimizer, make_env))
         p.start()
@@ -279,4 +291,4 @@ if __name__ == "__main__":
     for p in processes:
         p.join()
 
-    evaluate_model(global_model, make_env, num_frames=1000)
+    evaluate_model(global_model, make_env, num_frames=10000)

@@ -8,6 +8,7 @@ import torch.multiprocessing as mp
 from nes_py.wrappers import JoypadSpace
 import gym_super_mario_bros
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
+import matplotlib.pyplot as plt
 import torch.optim as optim
 import collections
 import gym
@@ -15,7 +16,44 @@ import cv2
 import time
 import os
 
+class DeadlockEnv(gym.Wrapper):
+    def __init__(self, env, threshold=20):
+        super().__init__(env)
+        self.last_x_pos = 0
+        self.count = 0
+        self.threshold = threshold
+        self.lifes = 3
+        self.stage = 1
+        self.world = 1
 
+    def reset(self, **kwargs):
+        self.last_x_pos = 0
+        self.count = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        state, reward, done, info = self.env.step(action)
+        x_pos = info['x_pos']
+
+        if x_pos <= self.last_x_pos:
+            self.count += 1
+        else:
+            self.count = 0
+            self.last_x_pos = x_pos
+
+        if info['life'] != self.lifes or info["stage"] != self.stage or info["world"] != self.world:
+            self.last_x_pos = x_pos
+            self.count = 0
+            self.lifes = info['life']
+            self.stage = info["stage"]
+            self.world = info["world"]
+
+        if self.count >= self.threshold:
+            reward = -15
+            done = True
+
+        return state, reward, done, info
+"""
 class DeadlockEnv(gym.Wrapper):
     def __init__(self, env, threshold=20):
         super().__init__(env)
@@ -38,7 +76,7 @@ class DeadlockEnv(gym.Wrapper):
         if x_pos > self.max_xpos:
             self.max_xpos = x_pos
 
-        if x_pos <= self.max_xpos:
+        if x_pos < self.max_xpos:
             self.count += 1
         if x_pos > self.max_xpos:
             reward += 1
@@ -59,7 +97,7 @@ class DeadlockEnv(gym.Wrapper):
 
         return state, reward, done, info
 
-
+"""
 class SkipFrame(gym.Wrapper):
     def __init__(self, env, skip):
         super().__init__(env)
@@ -99,13 +137,21 @@ class Actor_Critic(nn.Module):
     def __init__(self, env=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.env = env
-        """
-                    nn.Linear(3840, 64),
-                    nn.Tanh(),
-                    nn.Linear(64, 64),
-                    nn.Tanh(),
-                    nn.Linear(64, 7),
-                    nn.Softmax(dim=-1)
+        self.actor = nn.Sequential(
+            nn.Linear(3840, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, 7),
+            nn.Softmax(dim=-1)
+        )
+        self.critic = nn.Sequential(
+            nn.Linear(3840, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
         """
         self.actor = nn.Sequential(
             nn.Conv2d(1, 32, 8, stride=4),
@@ -128,6 +174,7 @@ class Actor_Critic(nn.Module):
             nn.ReLU(),
             nn.Linear(256, 1),
         )
+        """
 
     def act(self, state):
         action_probs = self.actor(state.unsqueeze(0).unsqueeze(0))
@@ -138,26 +185,19 @@ class Actor_Critic(nn.Module):
         return action.detach(), action_logprob.detach(), state_value.detach()
 
     def evaluate(self, states, actions):
-        """
-        Evaluiert States - unterstützt sowohl einzelne States als auch Batches
-        States Format: [batch, height, width] für Batches oder [height, width] für einzelne States
-        """
-        # Prüfen ob states ein Batch ist
-        if len(states.shape) == 3:  # Batch von States [batch, height, width]
+        if len(states.shape) == 3:  # [batch, height, width]
             batch_size = states.shape[0]
 
-            # Channel-Dimension hinzufügen für Conv2D: [batch, 1, height, width]
+            # für Conv2D: [batch, 1, height, width]
             states = states.unsqueeze(1)
 
-            # Forward pass durch das Netzwerk
-            action_probs = self.actor(states)
-            state_values = self.critic(states).squeeze(-1)  # [batch_size]
+            action_probs = self.actor(states.reshape(states.shape[0], -1))
+            state_values = self.critic(states.reshape(states.shape[0], -1)).squeeze(-1)  # [batch_size]
 
-            # Actions zu Tensor konvertieren falls nötig
+
             if not isinstance(actions, torch.Tensor):
                 actions = torch.tensor(actions, device=states.device, dtype=torch.long)
 
-            # Log probabilities berechnen
             dist = torch.distributions.Categorical(action_probs)
             logprobs = dist.log_prob(actions)
             entropy = dist.entropy()
@@ -175,8 +215,8 @@ class Actor_Critic(nn.Module):
                 actions = actions.unsqueeze(0) if actions.dim() == 0 else actions
 
             # Forward pass
-            action_probs = self.actor(states)
-            state_values = self.critic(states).squeeze(-1)
+            action_probs = self.actor(states.reshape(states.shape[0], -1))
+            state_values = self.critic(states.reshape(states.shape[0], -1)).squeeze(-1)
 
             # Distribution und Berechnungen
             dist = torch.distributions.Categorical(action_probs)
@@ -239,7 +279,7 @@ def ppo_worker_fn(worker_id, shared_state_dict, queue, env_fn, n_steps=128, max_
                     return
 
                 with torch.no_grad():
-                    action, logprob, value = local_model.act(state_tensor)
+                    action, logprob, value = local_model.act(state_tensor.flatten())
 
                 try:
                     next_state, reward, done, info = env.step(action.item())
@@ -266,7 +306,7 @@ def ppo_worker_fn(worker_id, shared_state_dict, queue, env_fn, n_steps=128, max_
                 try:
                     processed_next_state = GrayScale(Downsample(4, state))
                     next_tensor = torch.from_numpy(processed_next_state).float()
-                    next_value = local_model.critic(next_tensor.unsqueeze(0).unsqueeze(0)) if not done else torch.tensor([0.0])
+                    next_value = local_model.critic(next_tensor.unsqueeze(0).unsqueeze(0).flatten()) if not done else torch.tensor([0.0])
                 except Exception as e:
                     print(f"[Worker {worker_id}] Error in value estimation: {e}")
                     traceback.print_exc()
@@ -316,9 +356,6 @@ def compute_advantages(rewards, values, next_value, dones, gamma=0.99, lam=0.95)
 
 
 def evaluate_model(model, env_fn, total_frames=1000, render=False, save_video=False, video_path="mario_gameplay.mp4"):
-    """
-    Modell evaluieren über feste Anzahl Frames (startet automatisch neu bei done=True)
-    """
     env = env_fn()
     state = env.reset()
     done = False
@@ -326,6 +363,7 @@ def evaluate_model(model, env_fn, total_frames=1000, render=False, save_video=Fa
     total_reward = 0
     episode_count = 0
     episode_rewards = []
+    episode_length = []
     current_episode_reward = 0
 
 
@@ -342,7 +380,7 @@ def evaluate_model(model, env_fn, total_frames=1000, render=False, save_video=Fa
 
 
         with torch.no_grad():
-            action, _, _ = model.act(tensor)
+            action, _, _ = model.act(tensor.flatten())
 
 
         state, reward, done, info = env.step(action.item())
@@ -366,9 +404,10 @@ def evaluate_model(model, env_fn, total_frames=1000, render=False, save_video=Fa
 
         if done:
             episode_rewards.append(current_episode_reward)
+            episode_length.append(info['x_pos'])
             episode_count += 1
             print(
-                f"Episode {episode_count} finished - Reward: {current_episode_reward:.2f} - Length{info['x_pos']} - Frame: {frame + 1}/{total_frames}")
+                f"Episode {episode_count} finished - Reward: {current_episode_reward:.2f} - Length {info['x_pos']} - Frame: {frame + 1}/{total_frames}")
 
 
             state = env.reset()
@@ -385,6 +424,15 @@ def evaluate_model(model, env_fn, total_frames=1000, render=False, save_video=Fa
 
     if save_video and frames:
         save_frames_as_video(frames, video_path, fps=30)
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+        axes[0] = plt.subplot(1, 2, 1)
+        axes[1] = plt.subplot(1, 2, 2)
+
+        axes[0].plot(episode_length)
+        axes[1].plot(episode_rewards)
+
+        fig.savefig('DPPO.png')
 
 
     avg_episode_reward = np.mean(episode_rewards) if episode_rewards else 0
@@ -394,7 +442,6 @@ def evaluate_model(model, env_fn, total_frames=1000, render=False, save_video=Fa
     print(f"Total Reward: {total_reward:.2f}")
     print(f"Average Reward per Episode: {avg_episode_reward:.2f}")
     print(f"Average Reward per Frame: {total_reward / total_frames:.4f}")
-
     return {
         'total_reward': total_reward,
         'episode_rewards': episode_rewards,
@@ -405,9 +452,6 @@ def evaluate_model(model, env_fn, total_frames=1000, render=False, save_video=Fa
 
 
 def save_frames_as_video(frames, output_path, fps=30):
-    """
-    Frames als Video speichern
-    """
     if not frames:
         print("No frames to save!")
         return
@@ -482,7 +526,7 @@ def main():
 
 
     update_count = 0
-    total_updates = 30  #später erhöhen
+    total_updates = 2000  #später erhöhen
 
     print("Starting training loop...")
 
@@ -578,7 +622,7 @@ def main():
                     p.kill()
 
         print("Training completed!")
-        evaluate_model(policy_model, make_env, total_frames=4000,save_video=True, render=True)
+        evaluate_model(policy_model, make_env, total_frames=10000,save_video=True, render=True)
 
 
 
