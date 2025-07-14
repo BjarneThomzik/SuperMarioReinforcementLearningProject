@@ -28,13 +28,20 @@ class DQN(nn.Module):
     def __init__(self, action_dim):
         super(DQN, self).__init__()
         self.action_dim = action_dim
+
+        conv1_size_h = (60 - 8) // 4 + 1
+        conv1_size_w = (64 - 8) // 4 + 1
+        conv2_size_h = (conv1_size_h - 4) // 2 + 1
+        conv2_size_w = (conv1_size_w - 4) // 2 + 1
+        flattened_size = conv2_size_h * conv2_size_w * 32
+
         self.net = nn.Sequential(
             nn.Conv2d(in_channels=4, out_channels=16, kernel_size=8, stride=4),
             nn.ReLU(),
             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=4, stride=2),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(in_features=32 * 8 * 8, out_features=256),
+            nn.Linear(in_features=flattened_size, out_features=256),
             nn.ReLU(),
             nn.Linear(in_features=256, out_features=action_dim),
         )
@@ -60,7 +67,7 @@ class Agent:
         if torch.rand(1) <= self.epsilon:
             action = torch.randint(low=0, high=self.dqn.action_dim, size=(1,))
         else:
-            state = torch.tensor(state, dtype=torch.float32).to(device)
+            state = state.to(device)
             with torch.no_grad():
                 q_values = self.dqn(state)
             action = torch.argmax(q_values)
@@ -77,10 +84,10 @@ class Agent:
             return
         batch = random.sample(self.replay_buffer, self.replay_batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
-        states = torch.tensor(states, dtype=torch.float32).to(device)
+        states = torch.cat(states).float().to(device)
         actions = torch.tensor(actions, dtype=torch.long).to(device)
         rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
-        next_states = torch.tensor(next_states, dtype=torch.float32).to(device)
+        next_states = torch.cat(next_states).float().to(device)
         dones = torch.tensor(dones, dtype=torch.float32).to(device)
         q_values = self.dqn(states)
         with torch.no_grad():
