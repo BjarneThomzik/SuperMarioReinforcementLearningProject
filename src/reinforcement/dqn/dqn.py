@@ -249,7 +249,7 @@ tbar = tqdm(range(1, max_training_epochs))
 for i in tbar:
     # first we reset the state
     state = env.reset()
-    state, reward, done, info = env.step(torch.randint(low=0, high=action_dim, size=(1,)))
+    state, reward, done, info = env.step(torch.randint(low=0, high=action_dim, size=(1,)).item())
     old_y = info['y_pos']
     current_ep_reward = 0
     # as we stack some frames, we create a buffer with empty frames for the first inputs
