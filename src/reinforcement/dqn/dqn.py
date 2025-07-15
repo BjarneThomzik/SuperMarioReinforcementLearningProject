@@ -274,7 +274,7 @@ for i in tbar:
         # reward shaping
         new_y = info['y_pos']
         if new_y > old_y:
-            reward += 0.5
+            reward += 1
         old_y = new_y
 
         # Downsampling the environment
