@@ -249,6 +249,8 @@ tbar = tqdm(range(1, max_training_epochs))
 for i in tbar:
     # first we reset the state
     state = env.reset()
+    state, reward, done, info = env.step(torch.randint(low=0, high=action_dim, size=(1,)))
+    old_y = info['y_pos']
     current_ep_reward = 0
     # as we stack some frames, we create a buffer with empty frames for the first inputs
     states_buffer = [np.zeros((3840,)) for _ in range(3)]
@@ -268,6 +270,12 @@ for i in tbar:
 
         # performing the action and receiving the information from the environments
         state, reward, done, info = env.step(action)
+
+        # reward shaping
+        new_y = info['y_pos']
+        if new_y > old_y:
+            reward += 0.5
+        old_y = new_y
 
         # Downsampling the environment
         in_state = GrayScale(Downsample(down_sample_rate, state.copy())) / 255
