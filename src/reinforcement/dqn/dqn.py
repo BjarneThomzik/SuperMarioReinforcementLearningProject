@@ -250,7 +250,8 @@ for i in tbar:
     # first we reset the state
     state = env.reset()
     state, reward, done, info = env.step(torch.randint(low=0, high=action_dim, size=(1,)).item())
-    old_y = info['y_pos']
+    #old_y = info['y_pos']
+    ground_y = info['y_pos']
     current_ep_reward = 0
     # as we stack some frames, we create a buffer with empty frames for the first inputs
     states_buffer = [np.zeros((3840,)) for _ in range(3)]
@@ -272,10 +273,13 @@ for i in tbar:
         state, reward, done, info = env.step(action)
 
         # reward shaping
-        new_y = info['y_pos']
-        if new_y > old_y:
-            reward += 2
-        old_y = new_y
+        #new_y = info['y_pos']
+        #if new_y > old_y:
+            #reward += 2
+        #old_y = new_y
+        current_y = info['y_pos']
+        if current_y > ground_y:
+            reward += ((current_y - ground_y) ** 2) * 0.001
 
         # Downsampling the environment
         in_state = GrayScale(Downsample(down_sample_rate, state.copy())) / 255
