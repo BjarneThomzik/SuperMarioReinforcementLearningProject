@@ -9,7 +9,6 @@ import torch
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
 from nes_py.wrappers import JoypadSpace
 from torch import nn
-import gym
 from tqdm import tqdm
 
 # set device to cpu or cuda
@@ -80,9 +79,11 @@ class Agent:
         self.replay_buffer.append(transition)
 
     def learn(self):
-        if len(self.replay_buffer) < self.replay_batch_size:
-            return
-        batch = random.sample(self.replay_buffer, self.replay_batch_size)
+        batch_size = self.replay_batch_size
+        buffer_size = len(self.replay_buffer)
+        if buffer_size < self.replay_batch_size:
+            batch_size = buffer_size
+        batch = random.sample(self.replay_buffer, batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
         states = torch.cat(states).float().to(device)
         actions = torch.tensor(actions, dtype=torch.long).to(device)
