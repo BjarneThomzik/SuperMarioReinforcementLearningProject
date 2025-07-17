@@ -100,6 +100,7 @@ class Agent:
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        self.anneal_epsilon()
 
 
 # renders given frames with mediapy and shows a video
@@ -213,7 +214,7 @@ env = DeadlockEnv(env, threshold=(
 action_dim = env.action_space.n  # action space dimension
 # state_dim = env.state_space.n  # Currently we flatten the input and therefore set the state_dim manually
 
-dqn_agent = Agent(action_dim=action_dim, learning_rate=0.00025, gamma=0.9999, epsilon_start=1.0, epsilon_end=0.1,
+dqn_agent = Agent(action_dim=action_dim, learning_rate=0.00025, gamma=0.99, epsilon_start=1.0, epsilon_end=0.1,
                   epsilon_decay=0.0000009, replay_buffer_size=1000000, replay_batch_size=32)
 
 # track total training time
